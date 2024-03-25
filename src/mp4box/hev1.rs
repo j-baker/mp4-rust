@@ -269,6 +269,12 @@ pub struct HvcCArray {
     pub nalus: Vec<HvcCArrayNalu>,
 }
 
+impl HvcCArray {
+    pub fn is_parameter_set(&self) -> bool {
+        self.nal_unit_type == VPS || self.nal_unit_type == SPS || self.nal_unit_type == PPS
+    }
+}
+
 impl<R: Read + Seek> ReadBox<&mut R> for HvcCBox {
     fn read_box(reader: &mut R, _size: u64) -> Result<Self> {
         let configuration_version = reader.read_u8()?;
