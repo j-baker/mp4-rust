@@ -121,6 +121,12 @@ impl<R: Read + Seek> ReadBox<&mut R> for Hvc1Box {
             return Err(Error::InvalidData("hvcc not found"));
         };
 
+        for arr in &hvcc.arrays {
+            if arr.is_parameter_set() && !arr.completeness {
+                return Err(Error::InvalidData("hvcc parameter set completeness must be 1 for hvc1 box"));
+            }
+        }
+
         skip_bytes_to(reader, start + size)?;
 
         Ok(Hvc1Box {
@@ -159,6 +165,12 @@ impl<W: Write> WriteBox<&mut W> for Hvc1Box {
         writer.write_u16::<BigEndian>(self.depth)?;
         writer.write_i16::<BigEndian>(-1)?; // pre-defined
 
+        for arr in &self.hvcc.arrays {
+            if arr.is_parameter_set() && !arr.completeness {
+                return Err(Error::InvalidData("hvcc parameter set completeness must be 1 for hvc1 box"));
+            }
+        }
+
         self.hvcc.write_box(writer)?;
 
         Ok(size)
@@ -168,11 +180,19 @@ impl<W: Write> WriteBox<&mut W> for Hvc1Box {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::mp4box::BoxHeader;
+    use crate::{hev1::{HvcCArray, HvcCArrayNalu}, mp4box::BoxHeader};
     use std::io::Cursor;
 
     #[test]
     fn test_hvc1() {
+        let hvcc_array = HvcCArray {
+            completeness: true,
+            nal_unit_type: 34,
+            nalus: vec![HvcCArrayNalu {
+                size: 8,
+                data: vec![68, 1, 193, 114, 67, 141, 98, 36],
+            }],
+        };
         let src_box = Hvc1Box {
             data_reference_index: 1,
             width: 320,
@@ -183,6 +203,7 @@ mod tests {
             depth: 24,
             hvcc: HvcCBox {
                 configuration_version: 1,
+                arrays: vec![hvcc_array],
                 ..Default::default()
             },
         };

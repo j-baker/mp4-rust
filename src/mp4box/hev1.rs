@@ -101,31 +101,38 @@ impl<R: Read + Seek> ReadBox<&mut R> for Hev1Box {
         let depth = reader.read_u16::<BigEndian>()?;
         reader.read_i16::<BigEndian>()?; // pre-defined
 
-        let header = BoxHeader::read(reader)?;
-        let BoxHeader { name, size: s } = header;
-        if s > size {
-            return Err(Error::InvalidData(
-                "hev1 box contains a box with a larger size than it",
-            ));
-        }
-        if name == BoxType::HvcCBox {
-            let hvcc = HvcCBox::read_box(reader, s)?;
+        let mut hvcc = None;
 
-            skip_bytes_to(reader, start + size)?;
-
-            Ok(Hev1Box {
-                data_reference_index,
-                width,
-                height,
-                horizresolution,
-                vertresolution,
-                frame_count,
-                depth,
-                hvcc,
-            })
-        } else {
-            Err(Error::InvalidData("hvcc not found"))
+        while reader.stream_position()? < start + size {
+            let header = BoxHeader::read(reader)?;
+            let BoxHeader { name, size: s } = header;
+            if s > size {
+                return Err(Error::InvalidData(
+                    "hev1 box contains a box with a larger size than it",
+                ));
+            }
+            if name == BoxType::HvcCBox {
+                hvcc = Some(HvcCBox::read_box(reader, s)?);
+            } else {
+                skip_box(reader, s)?;
+            }
         }
+        let Some(hvcc) = hvcc else {
+            return Err(Error::InvalidData("hvcc not found"));
+        };
+
+        skip_bytes_to(reader, start + size)?;
+
+        Ok(Hev1Box {
+            data_reference_index,
+            width,
+            height,
+            horizresolution,
+            vertresolution,
+            frame_count,
+            depth,
+            hvcc,
+        })
     }
 }
 
@@ -267,6 +274,12 @@ pub struct HvcCArray {
     pub completeness: bool,
     pub nal_unit_type: u8,
     pub nalus: Vec<HvcCArrayNalu>,
+}
+
+impl HvcCArray {
+    pub fn is_parameter_set(&self) -> bool {
+        self.nal_unit_type == VPS || self.nal_unit_type == SPS || self.nal_unit_type == PPS
+    }
 }
 
 impl<R: Read + Seek> ReadBox<&mut R> for HvcCBox {
